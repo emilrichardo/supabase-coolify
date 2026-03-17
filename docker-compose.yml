@@ -38,12 +38,11 @@ services:
       - "traefik.http.routers.kong.tls=true"
       - "traefik.http.routers.kong.tls.certresolver=letsencrypt"
       - "traefik.http.services.kong.loadbalancer.server.port=8000"
-      # Health check para Coolify v4
       - "coolify.healthcheck.enabled=true"
       - "coolify.healthcheck.path=/health"
     depends_on:
-      analytics:
-        condition: service_healthy
+      - db
+      - analytics
     networks:
       - supabase-network
 
@@ -87,8 +86,9 @@ services:
       - "coolify.healthcheck.enabled=true"
       - "coolify.healthcheck.path=/api/health"
     depends_on:
-      - analytics
+      - db
       - meta
+      - analytics
     networks:
       - supabase-network
 
@@ -247,10 +247,8 @@ services:
       - "coolify.managed=true"
       - "coolify.expose=false"
     depends_on:
-      db:
-        condition: service_healthy
-      analytics:
-        condition: service_healthy
+      - db
+      - analytics
     networks:
       - supabase-network
 
@@ -269,10 +267,8 @@ services:
       - "coolify.managed=true"
       - "coolify.expose=false"
     depends_on:
-      db:
-        condition: service_healthy
-      analytics:
-        condition: service_healthy
+      - db
+      - analytics
     networks:
       - supabase-network
 
@@ -300,10 +296,8 @@ services:
       - "coolify.managed=true"
       - "coolify.expose=false"
     depends_on:
-      db:
-        condition: service_healthy
-      analytics:
-        condition: service_healthy
+      - db
+      - analytics
     networks:
       - supabase-network
 
@@ -336,12 +330,9 @@ services:
       - "coolify.managed=true"
       - "coolify.expose=false"
     depends_on:
-      db:
-        condition: service_healthy
-      rest:
-        condition: service_started
-      analytics:
-        condition: service_healthy
+      - db
+      - rest
+      - analytics
     networks:
       - supabase-network
 
@@ -374,10 +365,8 @@ services:
       - "coolify.managed=true"
       - "coolify.expose=false"
     depends_on:
-      db:
-        condition: service_healthy
-      analytics:
-        condition: service_healthy
+      - db
+      - analytics
     networks:
       - supabase-network
 
@@ -396,10 +385,8 @@ services:
       - "coolify.managed=true"
       - "coolify.expose=false"
     depends_on:
-      analytics:
-        condition: service_healthy
-      db:
-        condition: service_healthy
+      - db
+      - analytics
     networks:
       - supabase-network
 
@@ -408,10 +395,10 @@ services:
     image: supabase/logflare:1.4.0
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
     environment:
       LOGFLARE_NODE_HOST: 127.0.0.1
       DB_USERNAME: supabase_admin
