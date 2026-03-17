@@ -1,0 +1,189 @@
+name: Deploy to Coolify v4
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+
+env:
+  COOLIFY_URL: ${{ secrets.COOLIFY_URL }}
+  COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+
+jobs:
+  verify:
+    name: Verify Configuration
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate docker-compose.yml
+        run: |
+          echo "🔍 Validando docker-compose.yml..."
+          docker-compose config > /dev/null
+          if [ $? -eq 0 ]; then
+            echo "✅ docker-compose.yml es válido"
+          else
+            echo "❌ docker-compose.yml tiene errores"
+            exit 1
+          fi
+
+      - name: Check required files
+        run: |
+          echo "📁 Verificando archivos necesarios..."
+          required_files=(
+            "docker-compose.yml"
+            "volumes/kong/kong-template.yml"
+            "volumes/db/init/00-initial-schema.sql"
+          )
+          
+          for file in "${required_files[@]}"; do
+            if [ -f "$file" ]; then
+              echo "✅ $file existe"
+            else
+              echo "❌ $file no encontrado"
+              exit 1
+            fi
+          done
+
+  deploy:
+    name: Deploy to Coolify v4
+    runs-on: ubuntu-latest
+    needs: verify
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Verify Coolify Connection
+        run: |
+          echo "🔍 Verificando conexión con Coolify v4..."
+          
+          response=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}" \
+            -H "Accept: application/json" \
+            "${{ secrets.COOLIFY_URL }}/api/v1/version")
+          
+          if [ "$response" = "200" ]; then
+            echo "✅ Conexión con Coolify exitosa"
+            
+            # Obtener versión
+            version=$(curl -s \
+              -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}" \
+              -H "Accept: application/json" \
+              "${{ secrets.COOLIFY_URL }}/api/v1/version" | jq -r '.version // "unknown"')
+            echo "📦 Versión de Coolify: $version"
+          else
+            echo "❌ Error de conexión con Coolify (HTTP $response)"
+            echo "Verifica que COOLIFY_URL y COOLIFY_TOKEN sean correctos"
+            exit 1
+          fi
+
+      - name: Trigger Deployment
+        run: |
+          echo "🚀 Iniciando despliegue en Coolify v4..."
+          echo "Commit: ${{ github.sha }}"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Autor: ${{ github.actor }}"
+          
+          # Usar el webhook para desencadenar el despliegue
+          response=$(curl -s -w "\n%{http_code}" \
+            --request GET \
+            "${{ secrets.COOLIFY_WEBHOOK }}" \
+            --header "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}")
+          
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          
+          if [ "$http_code" = "200" ] || [ "$http_code" = "201" ]; then
+            echo "✅ Despliegue iniciado correctamente"
+            echo "Response: $body"
+          else
+            echo "❌ Error al iniciar el despliegue (HTTP $http_code)"
+            echo "Response: $body"
+            exit 1
+          fi
+
+      - name: Wait for Deployment
+        run: |
+          echo "⏳ Esperando a que el despliegue se complete..."
+          echo "Esto puede tomar 5-10 minutos..."
+          
+          # Esperar 30 segundos para que el despliegue inicie
+          sleep 30
+          
+          # Intentar verificar el estado (opcional, depende de la API de Coolify)
+          max_attempts=20
+          attempt=1
+          
+          while [ $attempt -le $max_attempts ]; do
+            echo "Verificación $attempt de $max_attempts..."
+            
+            # Aquí podrías añadir lógica para verificar el estado del despliegue
+            # usando la API de Coolify si tienes el UUID del recurso
+            
+            sleep 15
+            attempt=$((attempt + 1))
+          done
+          
+          echo "✅ Tiempo de espera completado"
+          echo "Verifica el estado en el dashboard de Coolify"
+
+      - name: Deployment Summary
+        if: always()
+        run: |
+          echo ""
+          echo "📊 Resumen del Despliegue"
+          echo "========================"
+          echo "Repositorio: ${{ github.repository }}"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Autor: ${{ github.actor }}"
+          echo "Fecha: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo ""
+          echo "URLs de Supabase:"
+          echo "  - API: https://api.tudominio.com"
+          echo "  - Studio: https://studio.tudominio.com"
+          echo ""
+          echo "Próximos pasos:"
+          echo "  1. Verifica el estado en el dashboard de Coolify"
+          echo "  2. Comprueba que todos los servicios estén saludables"
+          echo "  3. Accede a Studio para configurar tu proyecto"
+
+  health-check:
+    name: Post-Deployment Health Check
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: success()
+    
+    steps:
+      - name: Wait for services
+        run: |
+          echo "⏳ Esperando 2 minutos para que los servicios inicien..."
+          sleep 120
+
+      - name: Check Kong Health
+        run: |
+          echo "🔍 Verificando Kong API Gateway..."
+          # Nota: Reemplaza con tu dominio real
+          # curl -f https://api.tudominio.com/health || exit 1
+          echo "⚠️  Actualiza esta sección con tu dominio real"
+
+      - name: Check Studio Health
+        run: |
+          echo "🔍 Verificando Supabase Studio..."
+          # Nota: Reemplaza con tu dominio real
+          # curl -f https://studio.tudominio.com/api/health || exit 1
+          echo "⚠️  Actualiza esta sección con tu dominio real"
